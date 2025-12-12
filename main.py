@@ -51,51 +51,64 @@ def normalize_path(path: str) -> str:
 def validate_config() -> Dict[str, str]:
     """Load and validate configuration from environment variables."""
     load_dotenv()
-    
+
+    def getenv_first(*names: str) -> Optional[str]:
+        for name in names:
+            v = os.getenv(name)
+            if v:
+                return v
+        return None
+
+    # canonical_key -> (accepted env var names...)
     required_vars = {
-        'steam_library_vdf_path': 'Steam library VDF file path',
-        'sunshine_apps_json_path': 'Sunshine apps.json file path',
-        'sunshine_grids_folder': 'Sunshine grids folder path',
-        'steamgriddb_api_key': 'SteamGridDB API key'
+        "STEAM_LIBRARY_VDF_PATH": ("STEAM_LIBRARY_VDF_PATH", "steam_library_vdf_path", "library_vdf_path"),
+        "SUNSHINE_APPS_JSON_PATH": ("SUNSHINE_APPS_JSON_PATH", "sunshine_apps_json_path", "apps_json_path"),
+        "SUNSHINE_GRIDS_FOLDER": ("SUNSHINE_GRIDS_FOLDER", "sunshine_grids_folder", "grids_folder"),
+        "STEAMGRIDDB_API_KEY": ("STEAMGRIDDB_API_KEY", "steamgriddb_api_key"),
     }
-    
-    config = {}
+
+    descriptions = {
+        "STEAM_LIBRARY_VDF_PATH": "Steam library VDF file path",
+        "SUNSHINE_APPS_JSON_PATH": "Sunshine apps.json file path",
+        "SUNSHINE_GRIDS_FOLDER": "Sunshine grids folder path",
+        "STEAMGRIDDB_API_KEY": "SteamGridDB API key",
+    }
+
+    config: Dict[str, str] = {}
     missing_vars = []
-    
-    for var, description in required_vars.items():
-        value = os.getenv(var)
+
+    for canonical, aliases in required_vars.items():
+        value = getenv_first(*aliases)
         if not value:
-            missing_vars.append(f"{var} ({description})")
-        else:
-            # Normalize paths for file/folder variables
-            if 'PATH' in var or 'FOLDER' in var:
-                value = normalize_path(value)
-                logging.debug(f"Normalized {var}: {value}")
-        config[var] = value
-    
-    # Optional variables with defaults
-    steam_exe = os.getenv('STEAM_EXE_PATH', '')
-    sunshine_exe = os.getenv('SUNSHINE_EXE_PATH', '')
-    
-    config['STEAM_EXE_PATH'] = normalize_path(steam_exe) if steam_exe else ''
-    config['SUNSHINE_EXE_PATH'] = normalize_path(sunshine_exe) if sunshine_exe else ''
-    
+            missing_vars.append(f"{canonical} ({descriptions[canonical]})")
+            continue
+
+        if canonical.endswith("_PATH") or canonical.endswith("_FOLDER"):
+            value = normalize_path(value)
+            logging.debug(f"Normalized {canonical}: {value}")
+
+        config[canonical] = value
+
+    # Optional variables with defaults (+ backward compatible aliases)
+    steam_exe = getenv_first("STEAM_EXE_PATH", "steam_exe_path") or ""
+    sunshine_exe = getenv_first("SUNSHINE_EXE_PATH", "sunshine_exe_path") or ""
+    config["STEAM_EXE_PATH"] = normalize_path(steam_exe) if steam_exe else ""
+    config["SUNSHINE_EXE_PATH"] = normalize_path(sunshine_exe) if sunshine_exe else ""
+
     if missing_vars:
         logging.error(f"Missing required environment variables: {', '.join(missing_vars)}")
         sys.exit(1)
-    
-    # Validate paths exist
-    if not os.path.exists(config['STEAM_LIBRARY_VDF_PATH']):
+
+    if not os.path.exists(config["STEAM_LIBRARY_VDF_PATH"]):
         logging.error(f"Steam library VDF file not found: {config['STEAM_LIBRARY_VDF_PATH']}")
         sys.exit(1)
-    
-    # Validate parent directories exist for output paths
-    apps_dir = os.path.dirname(config['SUNSHINE_APPS_JSON_PATH'])
+
+    apps_dir = os.path.dirname(config["SUNSHINE_APPS_JSON_PATH"])
     if not os.path.exists(apps_dir):
         logging.error(f"Sunshine config directory not found: {apps_dir}")
-        logging.info(f"Please ensure Sunshine is installed and has created its config directory")
+        logging.info("Please ensure Sunshine is installed and has created its config directory")
         sys.exit(1)
-    
+
     return config
 
 
